@@ -1,0 +1,462 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#0d0d0f">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>Photobooth Flipbook</title>
+<style>
+  :root {
+    --bg: #0d0d0f;
+    --panel: #1a1a1e;
+    --line: #3a3a40;
+    --text: #f4f1ea;
+    --muted: #8a8a92;
+    --amber: #e8a13c;
+    --danger: #d8654f;
+    --radius: 12px;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+  html, body {
+    height: 100%;
+    background: var(--bg);
+    color: var(--text);
+    font-family: ui-monospace, "SF Mono", "Roboto Mono", Menlo, monospace;
+    overscroll-behavior: none;
+    -webkit-user-select: none;
+    user-select: none;
+  }
+  body {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: env(safe-area-inset-top) 1rem calc(env(safe-area-inset-bottom) + 1rem);
+    min-height: 100%;
+    gap: 1rem;
+    overflow-x: hidden;
+  }
+  header { text-align: center; padding-top: 1rem; flex-shrink: 0; }
+  header .title {
+    font-size: 20px; font-weight: 600; letter-spacing: 0.14em;
+    text-transform: uppercase; color: var(--text);
+  }
+  header .subtitle {
+    font-size: 11px; color: var(--muted); margin-top: 4px;
+    letter-spacing: 0.18em; text-transform: uppercase;
+  }
+  header .subtitle .dot { color: var(--amber); }
+
+  .stage-wrap {
+    position: relative;
+    width: 100%;
+    max-width: 440px;
+    aspect-ratio: 4 / 3;
+    flex-shrink: 0;
+  }
+  .stage {
+    position: absolute; inset: 0;
+    background: #000;
+    border-radius: var(--radius);
+    overflow: hidden;
+    border: 3px solid var(--line);
+  }
+  #video {
+    width: 100%; height: 100%; object-fit: cover; display: block;
+    transform: scaleX(-1);
+  }
+  #video.rear { transform: none; }
+
+  #countdown {
+    position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+    font-size: 96px; font-weight: 700; color: #fff; pointer-events: none;
+    opacity: 0; transition: opacity 0.15s; text-shadow: 0 4px 24px rgba(0,0,0,0.9);
+  }
+  #flash {
+    position: absolute; inset: 0; background: #fff; opacity: 0; pointer-events: none;
+    transition: opacity 0.09s;
+  }
+  #status {
+    position: absolute; top: 10px; left: 50%; transform: translateX(-50%);
+    background: rgba(0,0,0,0.55); color: #fff; font-size: 12px;
+    padding: 4px 12px; border-radius: 20px; letter-spacing: 0.06em;
+    pointer-events: none; opacity: 0; transition: opacity 0.2s; white-space: nowrap;
+  }
+  #status.show { opacity: 1; }
+
+  #camToggle {
+    position: absolute; top: 10px; right: 10px;
+    width: 40px; height: 40px; border-radius: 50%;
+    background: rgba(0,0,0,0.5); border: none; color: #fff;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 20px; cursor: pointer;
+  }
+
+  .noCam {
+    position: absolute; inset: 0; display: none; flex-direction: column;
+    align-items: center; justify-content: center; gap: 10px; color: var(--muted);
+    font-size: 13px; text-align: center; padding: 1.5rem; line-height: 1.6;
+  }
+
+  /* Flip mode page styling */
+  .flip-page-img {
+    width: 100%; height: 100%; object-fit: cover; display: block;
+    transform: scaleX(-1);
+  }
+  .flip-page-img.rear { transform: none; }
+  #pageNum {
+    position: absolute; bottom: 8px; left: 12px; font-size: 11px;
+    color: rgba(255,255,255,0.85); letter-spacing: 0.08em;
+    text-shadow: 0 1px 3px #000;
+  }
+
+  .filmstrip {
+    width: 100%; max-width: 440px;
+    display: flex; gap: 6px; overflow-x: auto; padding: 2px 0 6px;
+    flex-shrink: 0; -webkit-overflow-scrolling: touch;
+  }
+  .filmstrip::-webkit-scrollbar { height: 4px; }
+  .filmstrip::-webkit-scrollbar-thumb { background: var(--line); border-radius: 4px; }
+  .fs {
+    width: 56px; height: 42px; flex-shrink: 0; border-radius: 6px; overflow: hidden;
+    border: 2px solid transparent; background: #000;
+  }
+  .fs.empty { border: 1.5px dashed var(--line); background: var(--panel); }
+  .fs img { width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); }
+  .fs img.rear { transform: none; }
+  .fs.active { border-color: var(--amber); }
+
+  .controls {
+    width: 100%; max-width: 440px; display: flex; flex-direction: column;
+    gap: 12px; align-items: center; flex-shrink: 0;
+  }
+  .row { display: flex; gap: 10px; width: 100%; justify-content: center; flex-wrap: wrap; }
+  button {
+    font-family: inherit; font-size: 14px; padding: 13px 22px; min-height: 48px;
+    border-radius: var(--radius); border: 1.5px solid var(--line);
+    background: var(--panel); color: var(--text); cursor: pointer;
+    letter-spacing: 0.05em; flex: 1; min-width: 90px; transition: transform 0.08s, opacity 0.15s;
+  }
+  button:active { transform: scale(0.96); }
+  button:disabled { opacity: 0.35; }
+  button.primary { background: var(--amber); color: #1a1200; border-color: var(--amber); font-weight: 600; flex: 2; }
+  button.danger { color: var(--danger); border-color: var(--danger); background: transparent; }
+  button.ghost { background: transparent; }
+
+  .picker { display: flex; gap: 8px; align-items: center; justify-content: center; font-size: 12px; color: var(--muted); }
+  .picker .opts { display: flex; gap: 6px; }
+  .picker .opt {
+    width: 38px; height: 38px; border-radius: 8px; border: 1.5px solid var(--line);
+    background: var(--panel); color: var(--text); display: flex; align-items: center;
+    justify-content: center; font-size: 13px; cursor: pointer;
+  }
+  .picker .opt.sel { border-color: var(--amber); color: var(--amber); }
+
+  .speed-row {
+    display: flex; align-items: center; gap: 12px; width: 100%;
+    font-size: 11px; color: var(--muted); letter-spacing: 0.08em;
+  }
+  input[type=range] {
+    flex: 1; height: 28px; -webkit-appearance: none; background: transparent;
+  }
+  input[type=range]::-webkit-slider-runnable-track {
+    height: 4px; background: var(--line); border-radius: 4px;
+  }
+  input[type=range]::-webkit-slider-thumb {
+    -webkit-appearance: none; width: 22px; height: 22px; border-radius: 50%;
+    background: var(--amber); margin-top: -9px; cursor: pointer;
+  }
+  input[type=range]::-moz-range-track { height: 4px; background: var(--line); border-radius: 4px; }
+  input[type=range]::-moz-range-thumb { width: 22px; height: 22px; border: none; border-radius: 50%; background: var(--amber); }
+
+  .hidden { display: none !important; }
+  #exportNote { font-size: 11px; color: var(--muted); text-align: center; min-height: 14px; letter-spacing: 0.04em; }
+  a.dl { display: none; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="title">Flipbook</div>
+  <div class="subtitle">capture <span class="dot">&bull;</span> flip <span class="dot">&bull;</span> save</div>
+</header>
+
+<div class="stage-wrap">
+  <div class="stage" id="stage">
+    <video id="video" autoplay playsinline muted></video>
+    <img id="flipImg" class="flip-page-img hidden" alt="Flipbook frame">
+    <div id="countdown">3</div>
+    <div id="flash"></div>
+    <div id="status"></div>
+    <div id="pageNum" class="hidden"></div>
+    <button id="camToggle" aria-label="Switch camera">&#x21bb;</button>
+    <div class="noCam" id="noCam">
+      <span style="font-size:28px">&#9888;</span>
+      <span id="noCamText">Camera unavailable. Tap to allow access, and make sure this page is opened over https.</span>
+    </div>
+  </div>
+</div>
+
+<div class="filmstrip" id="filmstrip"></div>
+
+<!-- CAPTURE CONTROLS -->
+<div class="controls" id="captureControls">
+  <div class="picker">
+    <span>frames</span>
+    <div class="opts" id="frameOpts">
+      <div class="opt" data-n="4">4</div>
+      <div class="opt sel" data-n="6">6</div>
+      <div class="opt" data-n="8">8</div>
+      <div class="opt" data-n="12">12</div>
+    </div>
+  </div>
+  <div class="row">
+    <button id="shootBtn" class="primary">shoot burst</button>
+  </div>
+</div>
+
+<!-- PLAYBACK CONTROLS -->
+<div class="controls hidden" id="playControls">
+  <div class="speed-row">
+    <span>SLOW</span>
+    <input type="range" id="speed" min="1" max="10" value="5" step="1">
+    <span>FAST</span>
+  </div>
+  <div class="row">
+    <button id="prevBtn" class="ghost">&larr;</button>
+    <button id="playBtn" class="primary">play</button>
+    <button id="nextBtn" class="ghost">&rarr;</button>
+  </div>
+  <div class="row">
+    <button id="saveBtn">save as gif</button>
+    <button id="reshootBtn" class="danger">reshoot</button>
+  </div>
+  <div id="exportNote"></div>
+</div>
+
+<canvas id="canvas" class="hidden"></canvas>
+<a id="dlLink" class="dl"></a>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/gif.js/0.2.0/gif.js"></script>
+<script>
+const $ = id => document.getElementById(id);
+const video = $('video'), flipImg = $('flipImg'), canvas = $('canvas'), ctx = canvas.getContext('2d');
+const countdown = $('countdown'), flash = $('flash'), statusEl = $('status'), pageNum = $('pageNum');
+const noCam = $('noCam'), noCamText = $('noCamText'), camToggle = $('camToggle');
+const filmstrip = $('filmstrip'), frameOpts = $('frameOpts');
+const captureControls = $('captureControls'), playControls = $('playControls');
+const shootBtn = $('shootBtn'), playBtn = $('playBtn'), prevBtn = $('prevBtn'), nextBtn = $('nextBtn');
+const saveBtn = $('saveBtn'), reshootBtn = $('reshootBtn'), speed = $('speed'), exportNote = $('exportNote');
+const dlLink = $('dlLink');
+
+let stream = null, facing = 'user', frameCount = 6;
+let frames = [], shooting = false, cur = 0, playing = false, timer = null;
+
+const W = 480, H = 360;
+
+function isRear() { return facing === 'environment'; }
+
+async function initCamera() {
+  if (stream) stream.getTracks().forEach(t => t.stop());
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: facing, width: { ideal: 1280 }, height: { ideal: 960 } },
+      audio: false
+    });
+    video.srcObject = stream;
+    noCam.style.display = 'none';
+    video.classList.toggle('rear', isRear());
+  } catch (e) {
+    noCam.style.display = 'flex';
+    video.style.display = 'none';
+    shootBtn.disabled = true;
+    if (!window.isSecureContext) {
+      noCamText.textContent = 'The camera only works on a secure (https) page. Host this file or open it via https / localhost.';
+    } else {
+      noCamText.textContent = 'Camera blocked. Check your browser permissions and reload.';
+    }
+  }
+}
+
+camToggle.addEventListener('click', () => {
+  facing = isRear() ? 'user' : 'environment';
+  initCamera();
+});
+
+frameOpts.addEventListener('click', e => {
+  const opt = e.target.closest('.opt');
+  if (!opt || shooting) return;
+  [...frameOpts.children].forEach(o => o.classList.remove('sel'));
+  opt.classList.add('sel');
+  frameCount = parseInt(opt.dataset.n);
+  buildEmptyStrip();
+});
+
+function buildEmptyStrip() {
+  filmstrip.innerHTML = '';
+  for (let i = 0; i < frameCount; i++) {
+    const f = document.createElement('div');
+    f.className = 'fs empty';
+    filmstrip.appendChild(f);
+  }
+}
+
+function showStatus(t) { statusEl.textContent = t; statusEl.classList.add('show'); }
+function hideStatus() { statusEl.classList.remove('show'); }
+function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+function doFlash() { flash.style.opacity = '1'; setTimeout(() => flash.style.opacity = '0', 110); }
+
+function grab() {
+  canvas.width = W; canvas.height = H;
+  if (isRear()) {
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+  } else {
+    ctx.setTransform(-1, 0, 0, 1, W, 0);
+  }
+  ctx.drawImage(video, 0, 0, W, H);
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  return canvas.toDataURL('image/jpeg', 0.85);
+}
+
+async function shootBurst() {
+  if (shooting) return;
+  shooting = true; frames = [];
+  shootBtn.disabled = true; camToggle.style.display = 'none';
+  buildEmptyStrip();
+  const slots = [...filmstrip.children];
+
+  for (let n = 3; n >= 1; n--) {
+    countdown.textContent = n; countdown.style.opacity = '1';
+    await sleep(650);
+  }
+  countdown.style.opacity = '0';
+
+  for (let i = 0; i < frameCount; i++) {
+    showStatus(`${i + 1} / ${frameCount}`);
+    const data = grab();
+    doFlash();
+    frames.push(data);
+    const slot = slots[i];
+    slot.className = 'fs';
+    const img = document.createElement('img');
+    img.src = data; if (isRear()) img.classList.add('rear');
+    slot.appendChild(img);
+    if (i < frameCount - 1) await sleep(550);
+  }
+
+  hideStatus();
+  shooting = false;
+  await sleep(500);
+  enterPlayback();
+}
+
+function enterPlayback() {
+  video.classList.add('hidden');
+  flipImg.classList.remove('hidden');
+  pageNum.classList.remove('hidden');
+  camToggle.style.display = 'none';
+  captureControls.classList.add('hidden');
+  playControls.classList.remove('hidden');
+  flipImg.classList.toggle('rear', isRear());
+  [...filmstrip.children].forEach((f, i) => {
+    f.onclick = () => { stopPlay(); setFrame(i); };
+  });
+  setFrame(0);
+}
+
+function setFrame(i) {
+  cur = i;
+  flipImg.src = frames[i];
+  pageNum.textContent = `${i + 1} / ${frames.length}`;
+  [...filmstrip.children].forEach((f, idx) => f.classList.toggle('active', idx === i));
+}
+
+function frameDelay() { return Math.round(1150 - parseInt(speed.value) * 100); }
+
+function startPlay() {
+  if (playing || frames.length === 0) return;
+  playing = true; playBtn.textContent = 'pause';
+  timer = setInterval(() => setFrame((cur + 1) % frames.length), frameDelay());
+}
+function stopPlay() {
+  playing = false; playBtn.textContent = 'play';
+  clearInterval(timer); timer = null;
+}
+
+playBtn.onclick = () => playing ? stopPlay() : startPlay();
+prevBtn.onclick = () => { stopPlay(); setFrame((cur - 1 + frames.length) % frames.length); };
+nextBtn.onclick = () => { stopPlay(); setFrame((cur + 1) % frames.length); };
+speed.oninput = () => { if (playing) { stopPlay(); startPlay(); } };
+
+shootBtn.onclick = shootBurst;
+
+reshootBtn.onclick = () => {
+  stopPlay(); frames = [];
+  flipImg.classList.add('hidden'); pageNum.classList.add('hidden');
+  video.classList.remove('hidden');
+  playControls.classList.add('hidden'); captureControls.classList.remove('hidden');
+  camToggle.style.display = 'flex'; shootBtn.disabled = false;
+  buildEmptyStrip();
+};
+
+// Export as animated GIF
+saveBtn.onclick = async () => {
+  if (frames.length === 0) return;
+  stopPlay();
+  saveBtn.disabled = true;
+  exportNote.textContent = 'building gif...';
+
+  let workerUrl;
+  try {
+    const res = await fetch('https://cdnjs.cloudflare.com/ajax/libs/gif.js/0.2.0/gif.worker.js');
+    const blob = await res.blob();
+    workerUrl = URL.createObjectURL(blob);
+  } catch (e) {
+    exportNote.textContent = 'could not load encoder (check connection)';
+    saveBtn.disabled = false;
+    return;
+  }
+
+  const gif = new GIF({ workers: 2, quality: 10, width: W, height: H, workerScript: workerUrl });
+  const delay = frameDelay();
+  let loaded = 0;
+
+  const imgs = await Promise.all(frames.map(src => new Promise(resolve => {
+    const im = new Image();
+    im.onload = () => resolve(im);
+    im.src = src;
+  })));
+
+  imgs.forEach(im => {
+    canvas.width = W; canvas.height = H;
+    if (isRear()) ctx.setTransform(1, 0, 0, 1, 0, 0);
+    else ctx.setTransform(-1, 0, 0, 1, W, 0);
+    ctx.drawImage(im, 0, 0, W, H);
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    gif.addFrame(ctx, { copy: true, delay });
+  });
+
+  gif.on('progress', p => { exportNote.textContent = `building gif... ${Math.round(p * 100)}%`; });
+  gif.on('finished', blob => {
+    const url = URL.createObjectURL(blob);
+    const file = new File([blob], 'flipbook.gif', { type: 'image/gif' });
+    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+      navigator.share({ files: [file], title: 'My Flipbook' }).catch(() => {});
+      exportNote.textContent = 'saved! use share sheet to keep it';
+    } else {
+      dlLink.href = url; dlLink.download = 'flipbook.gif'; dlLink.click();
+      exportNote.textContent = 'downloaded flipbook.gif';
+    }
+    saveBtn.disabled = false;
+    URL.revokeObjectURL(workerUrl);
+  });
+  gif.render();
+};
+
+buildEmptyStrip();
+initCamera();
+</script>
+</body>
+</html>
