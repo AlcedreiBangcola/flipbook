@@ -1,0 +1,418 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#0d0d0f">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>Photobooth</title>
+<style>
+  :root {
+    --bg: #0d0d0f; --panel: #1a1a1e; --line: #3a3a40;
+    --text: #f4f1ea; --muted: #8a8a92; --amber: #e8a13c; --danger: #d8654f;
+    --radius: 12px;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+  html, body {
+    height: 100%; background: var(--bg); color: var(--text);
+    font-family: ui-monospace, "SF Mono", "Roboto Mono", Menlo, monospace;
+    overscroll-behavior: none; -webkit-user-select: none; user-select: none;
+  }
+  body {
+    display: flex; flex-direction: column; align-items: center;
+    padding: env(safe-area-inset-top) 1rem calc(env(safe-area-inset-bottom) + 1rem);
+    min-height: 100%; gap: 1rem; overflow-x: hidden;
+  }
+  header { text-align: center; padding-top: 1rem; flex-shrink: 0; }
+  header .title { font-size: 20px; font-weight: 600; letter-spacing: 0.16em; text-transform: uppercase; }
+  header .subtitle { font-size: 11px; color: var(--muted); margin-top: 4px; letter-spacing: 0.18em; text-transform: uppercase; }
+  header .subtitle .dot { color: var(--amber); }
+
+  .stage-wrap { position: relative; width: 100%; max-width: 440px; aspect-ratio: 4 / 3; flex-shrink: 0; }
+  .stage { position: absolute; inset: 0; background: #000; border-radius: var(--radius); overflow: hidden; border: 3px solid var(--line); }
+  #video { width: 100%; height: 100%; object-fit: cover; display: block; transform: scaleX(-1); }
+  #video.rear { transform: none; }
+
+  #countdown {
+    position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+    font-size: 110px; font-weight: 700; color: #fff; pointer-events: none; opacity: 0;
+    transition: opacity 0.12s; text-shadow: 0 4px 24px rgba(0,0,0,0.9); z-index: 3;
+  }
+  #flash { position: absolute; inset: 0; background: #fff; opacity: 0; pointer-events: none; transition: opacity 0.09s; z-index: 4; }
+  #shotTag {
+    position: absolute; top: 10px; left: 50%; transform: translateX(-50%);
+    background: rgba(0,0,0,0.55); color: #fff; font-size: 12px; padding: 4px 12px;
+    border-radius: 20px; letter-spacing: 0.06em; opacity: 0; transition: opacity 0.2s; z-index: 3;
+  }
+  #shotTag.show { opacity: 1; }
+  #camToggle {
+    position: absolute; top: 10px; right: 10px; width: 40px; height: 40px; border-radius: 50%;
+    background: rgba(0,0,0,0.5); border: none; color: #fff; display: flex; align-items: center;
+    justify-content: center; font-size: 20px; cursor: pointer; z-index: 3;
+  }
+  .noCam { position: absolute; inset: 0; display: none; flex-direction: column; align-items: center; justify-content: center; gap: 10px; color: var(--muted); font-size: 13px; text-align: center; padding: 1.5rem; line-height: 1.6; }
+
+  .liveStrip { width: 100%; max-width: 440px; display: flex; gap: 6px; flex-shrink: 0; }
+  .liveStrip .slot { flex: 1; aspect-ratio: 4/3; border-radius: 6px; background: var(--panel); border: 1.5px dashed var(--line); overflow: hidden; }
+  .liveStrip .slot.filled { border-style: solid; border-color: var(--line); }
+  .liveStrip .slot img { width: 100%; height: 100%; object-fit: cover; }
+
+  .controls { width: 100%; max-width: 440px; display: flex; flex-direction: column; gap: 14px; align-items: center; flex-shrink: 0; }
+  .picker { width: 100%; }
+  .picker .lbl { font-size: 11px; color: var(--muted); letter-spacing: 0.12em; text-transform: uppercase; margin-bottom: 7px; display: block; }
+  .opts { display: flex; gap: 8px; }
+  .opt {
+    flex: 1; min-height: 42px; border-radius: 10px; border: 1.5px solid var(--line); background: var(--panel);
+    color: var(--text); display: flex; align-items: center; justify-content: center; gap: 6px;
+    font-size: 13px; cursor: pointer; padding: 6px; text-align: center; letter-spacing: 0.03em;
+  }
+  .opt.sel { border-color: var(--amber); color: var(--amber); }
+  .opt .sw { width: 16px; height: 16px; border-radius: 4px; flex-shrink: 0; border: 1px solid rgba(255,255,255,0.25); }
+
+  .row { display: flex; gap: 10px; width: 100%; justify-content: center; }
+  button {
+    font-family: inherit; font-size: 14px; padding: 13px 22px; min-height: 50px; border-radius: var(--radius);
+    border: 1.5px solid var(--line); background: var(--panel); color: var(--text); cursor: pointer;
+    letter-spacing: 0.05em; flex: 1; transition: transform 0.08s, opacity 0.15s;
+  }
+  button:active { transform: scale(0.97); }
+  button:disabled { opacity: 0.35; }
+  button.primary { background: var(--amber); color: #1a1200; border-color: var(--amber); font-weight: 600; }
+  button.danger { color: var(--danger); border-color: var(--danger); background: transparent; }
+  .note { font-size: 11px; color: var(--muted); text-align: center; letter-spacing: 0.04em; min-height: 14px; }
+
+  /* RESULT */
+  #result { display: none; flex-direction: column; align-items: center; gap: 1rem; width: 100%; max-width: 440px; }
+  #stripCanvas { width: auto; max-width: 62%; height: auto; border-radius: 6px; box-shadow: 0 6px 24px rgba(0,0,0,0.5); }
+  .hidden { display: none !important; }
+  a.dl { display: none; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="title">Photobooth</div>
+  <div class="subtitle">pose <span class="dot">&bull;</span> snap <span class="dot">&bull;</span> keep</div>
+</header>
+
+<!-- CAPTURE VIEW -->
+<div id="capture" style="display:flex; flex-direction:column; align-items:center; gap:1rem; width:100%;">
+  <div class="stage-wrap">
+    <div class="stage" id="stage">
+      <video id="video" autoplay playsinline muted></video>
+      <div id="countdown">3</div>
+      <div id="flash"></div>
+      <div id="shotTag"></div>
+      <button id="camToggle" aria-label="Switch camera">&#x21bb;</button>
+      <div class="noCam" id="noCam">
+        <span style="font-size:28px">&#9888;</span>
+        <span id="noCamText">Camera unavailable. Allow access, and open this page over https.</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="liveStrip" id="liveStrip"></div>
+
+  <div class="controls" id="setup">
+    <div class="picker">
+      <span class="lbl">filter</span>
+      <div class="opts" id="filterOpts">
+        <div class="opt sel" data-f="none">normal</div>
+        <div class="opt" data-f="bw">b &amp; w</div>
+        <div class="opt" data-f="fuji">fuji film</div>
+      </div>
+    </div>
+    <div class="picker">
+      <span class="lbl">strip design</span>
+      <div class="opts" id="designOpts">
+        <div class="opt sel" data-d="black"><span class="sw" style="background:#141414"></span>black</div>
+        <div class="opt" data-d="white"><span class="sw" style="background:#f4f1ea"></span>white</div>
+        <div class="opt" data-d="cute1"><span class="sw" style="background:#ffd9e7"></span>&#9829;</div>
+        <div class="opt" data-d="cute2"><span class="sw" style="background:#e6e1ff"></span>&#9733;</div>
+      </div>
+    </div>
+    <div class="picker">
+      <span class="lbl">photos</span>
+      <div class="opts" id="countOpts">
+        <div class="opt" data-n="3">3</div>
+        <div class="opt sel" data-n="4">4</div>
+      </div>
+    </div>
+    <div class="row"><button id="startBtn" class="primary">start</button></div>
+    <div class="note">a 3-2-1 countdown before each photo</div>
+  </div>
+</div>
+
+<!-- RESULT VIEW -->
+<div id="result">
+  <canvas id="stripCanvas"></canvas>
+  <div class="row">
+    <button id="saveStripBtn" class="primary">save strip</button>
+    <button id="saveGifBtn">save gif</button>
+  </div>
+  <div class="row"><button id="retakeBtn" class="danger">retake</button></div>
+  <div class="note" id="resultNote"></div>
+</div>
+
+<canvas id="work" class="hidden"></canvas>
+<a id="dlLink" class="dl"></a>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/gif.js/0.2.0/gif.js"></script>
+<script>
+const $ = id => document.getElementById(id);
+const video = $('video'), work = $('work'), wctx = work.getContext('2d');
+const countdown = $('countdown'), flash = $('flash'), shotTag = $('shotTag');
+const noCam = $('noCam'), noCamText = $('noCamText'), camToggle = $('camToggle');
+const liveStrip = $('liveStrip'), filterOpts = $('filterOpts'), designOpts = $('designOpts'), countOpts = $('countOpts');
+const captureView = $('capture'), setup = $('setup'), resultView = $('result');
+const startBtn = $('startBtn'), saveStripBtn = $('saveStripBtn'), saveGifBtn = $('saveGifBtn'), retakeBtn = $('retakeBtn');
+const stripCanvas = $('stripCanvas'), sctx = stripCanvas.getContext('2d');
+const resultNote = $('resultNote'), dlLink = $('dlLink');
+
+let stream = null, facing = 'user', filter = 'none', design = 'black', numShots = 4;
+let busy = false, shotImgs = [], gifFrames = [];
+
+const CELL_W = 480, CELL_H = 360;
+const PAD_X = 30, GAP = 18, HEADER = 64, FOOTER = 96;
+const GW = 320, GH = 240;
+
+const DESIGN = {
+  black: { bg: '#141414', frame: '#ffffff', text: '#ffffff', accent: '#ffffff' },
+  white: { bg: '#f4f1ea', frame: '#d8d2c4', text: '#3a3a3a', accent: '#b0a892' },
+  cute1: { bg: '#ffd9e7', frame: '#ffffff', text: '#c2356b', accent: '#ff7faf', glyph: '\u2665' },
+  cute2: { bg: '#e6e1ff', frame: '#ffffff', text: '#5a52c9', accent: '#8b80ff', glyph: '\u2605' }
+};
+
+function isRear() { return facing === 'environment'; }
+function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+function filterCSS() {
+  if (filter === 'bw') return 'grayscale(1) contrast(1.06)';
+  if (filter === 'fuji') return 'saturate(1.2) contrast(1.05) sepia(0.16) brightness(1.04)';
+  return 'none';
+}
+
+function applyPreviewFilter() { video.style.filter = filterCSS(); }
+
+async function initCamera() {
+  if (stream) stream.getTracks().forEach(t => t.stop());
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: facing, width: { ideal: 1280 }, height: { ideal: 960 } }, audio: false
+    });
+    video.srcObject = stream;
+    noCam.style.display = 'none';
+    video.classList.toggle('rear', isRear());
+    applyPreviewFilter();
+  } catch (e) {
+    noCam.style.display = 'flex'; video.style.display = 'none'; startBtn.disabled = true;
+    noCamText.textContent = window.isSecureContext
+      ? 'Camera blocked. Check browser permissions and reload.'
+      : 'The camera needs a secure (https) page. Host this file and open it over https.';
+  }
+}
+
+camToggle.addEventListener('click', () => { facing = isRear() ? 'user' : 'environment'; initCamera(); });
+
+function pick(container, attr, set) {
+  container.addEventListener('click', e => {
+    const o = e.target.closest('.opt');
+    if (!o || busy) return;
+    [...container.children].forEach(c => c.classList.remove('sel'));
+    o.classList.add('sel');
+    set(o.dataset[attr]);
+  });
+}
+pick(filterOpts, 'f', v => { filter = v; applyPreviewFilter(); });
+pick(designOpts, 'd', v => { design = v; });
+pick(countOpts, 'n', v => { numShots = parseInt(v); buildLiveStrip(); });
+
+function buildLiveStrip() {
+  liveStrip.innerHTML = '';
+  for (let i = 0; i < numShots; i++) {
+    const s = document.createElement('div'); s.className = 'slot';
+    liveStrip.appendChild(s);
+  }
+}
+
+// Draw current video frame (filtered + mirrored) into ctx at w x h
+function drawCurrent(c, w, h) {
+  c.save();
+  c.filter = filterCSS();
+  if (!isRear()) { c.translate(w, 0); c.scale(-1, 1); }
+  c.drawImage(video, 0, 0, w, h);
+  c.restore();
+}
+
+function grabPhoto() {
+  work.width = CELL_W; work.height = CELL_H;
+  drawCurrent(wctx, CELL_W, CELL_H);
+  return work.toDataURL('image/jpeg', 0.9);
+}
+function grabGif() {
+  work.width = GW; work.height = GH;
+  drawCurrent(wctx, GW, GH);
+  return work.toDataURL('image/jpeg', 0.8);
+}
+
+function loadImg(src) {
+  return new Promise(res => { const im = new Image(); im.onload = () => res(im); im.src = src; });
+}
+
+async function runSession() {
+  if (busy) return;
+  busy = true;
+  shotImgs = []; gifFrames = [];
+  setup.style.display = 'none';
+  camToggle.style.display = 'none';
+  startBtn.disabled = true;
+  buildLiveStrip();
+  const slots = [...liveStrip.children];
+
+  for (let s = 0; s < numShots; s++) {
+    shotTag.textContent = `photo ${s + 1} of ${numShots}`;
+    shotTag.classList.add('show');
+    // countdown ~2.1s, sampling lead-up frames for the gif
+    const t0 = Date.now(), dur = 2100;
+    while (Date.now() - t0 < dur) {
+      const num = 3 - Math.floor((Date.now() - t0) / 700);
+      countdown.textContent = Math.max(1, num);
+      countdown.style.opacity = '1';
+      if (gifFrames.length < 70) gifFrames.push(grabGif());
+      await sleep(170);
+    }
+    countdown.style.opacity = '0';
+    // snap
+    const url = grabPhoto();
+    flash.style.opacity = '1'; setTimeout(() => flash.style.opacity = '0', 110);
+    gifFrames.push(grabGif());
+    const img = await loadImg(url);
+    shotImgs.push(img);
+    slots[s].classList.add('filled');
+    const thumb = document.createElement('img'); thumb.src = url; slots[s].appendChild(thumb);
+    if (s < numShots - 1) await sleep(900);
+  }
+
+  shotTag.classList.remove('show');
+  busy = false;
+  await sleep(300);
+  showResult();
+}
+
+function roundRect(c, x, y, w, h, r) {
+  c.beginPath(); c.moveTo(x + r, y);
+  c.arcTo(x + w, y, x + w, y + h, r); c.arcTo(x + w, y + h, x, y + h, r);
+  c.arcTo(x, y + h, x, y, r); c.arcTo(x, y, x + w, y, r); c.closePath();
+}
+
+function composeStrip() {
+  const D = DESIGN[design];
+  const STRIP_W = CELL_W + PAD_X * 2;
+  const STRIP_H = HEADER + numShots * CELL_H + (numShots - 1) * GAP + FOOTER;
+  stripCanvas.width = STRIP_W; stripCanvas.height = STRIP_H;
+
+  sctx.fillStyle = D.bg; sctx.fillRect(0, 0, STRIP_W, STRIP_H);
+
+  // photos
+  for (let i = 0; i < numShots; i++) {
+    const y = HEADER + i * (CELL_H + GAP);
+    sctx.fillStyle = D.frame;
+    roundRect(sctx, PAD_X - 5, y - 5, CELL_W + 10, CELL_H + 10, 6); sctx.fill();
+    sctx.drawImage(shotImgs[i], PAD_X, y, CELL_W, CELL_H);
+  }
+
+  // decorations
+  const cx = STRIP_W / 2;
+  sctx.textAlign = 'center';
+  if (D.glyph) {
+    sctx.fillStyle = D.accent;
+    sctx.font = '30px ui-monospace, monospace';
+    const row = `${D.glyph}   ${D.glyph}   ${D.glyph}   ${D.glyph}   ${D.glyph}`;
+    sctx.fillText(row, cx, HEADER - 22);
+    sctx.fillText(row, cx, STRIP_H - FOOTER + 44);
+  } else {
+    sctx.fillStyle = D.accent;
+    sctx.font = '500 16px ui-monospace, monospace';
+    sctx.fillText('P H O T O B O O T H', cx, HEADER - 24);
+  }
+  const date = new Date().toLocaleDateString();
+  sctx.fillStyle = D.text;
+  sctx.font = '500 22px ui-monospace, monospace';
+  sctx.fillText(date, cx, STRIP_H - 30);
+  sctx.textAlign = 'start';
+}
+
+function showResult() {
+  composeStrip();
+  captureView.style.display = 'none';
+  resultView.style.display = 'flex';
+  resultNote.textContent = 'tap save strip for the photo, save gif for the clip';
+}
+
+startBtn.onclick = runSession;
+
+retakeBtn.onclick = () => {
+  resultView.style.display = 'none';
+  captureView.style.display = 'flex';
+  setup.style.display = 'flex';
+  camToggle.style.display = 'flex';
+  startBtn.disabled = false;
+  liveStrip.innerHTML = '';
+  buildLiveStrip();
+};
+
+function shareOrDownload(blob, filename, title, note) {
+  const file = new File([blob], filename, { type: blob.type });
+  if (navigator.canShare && navigator.canShare({ files: [file] })) {
+    navigator.share({ files: [file], title }).catch(() => {});
+    resultNote.textContent = 'saved! use the share sheet to keep it';
+  } else {
+    const url = URL.createObjectURL(blob);
+    dlLink.href = url; dlLink.download = filename; dlLink.click();
+    resultNote.textContent = `downloaded ${filename}`;
+  }
+  if (note) resultNote.textContent = note;
+}
+
+saveStripBtn.onclick = () => {
+  stripCanvas.toBlob(b => { if (b) shareOrDownload(b, 'photobooth.png', 'Photobooth strip'); }, 'image/png');
+};
+
+saveGifBtn.onclick = async () => {
+  if (gifFrames.length === 0) return;
+  saveGifBtn.disabled = true;
+  resultNote.textContent = 'building gif...';
+  let workerUrl;
+  try {
+    const res = await fetch('https://cdnjs.cloudflare.com/ajax/libs/gif.js/0.2.0/gif.worker.js');
+    workerUrl = URL.createObjectURL(await res.blob());
+  } catch (e) {
+    resultNote.textContent = 'could not load encoder (check connection)';
+    saveGifBtn.disabled = false; return;
+  }
+  const D = DESIGN[design];
+  const BORD = 12, FW = GW + BORD * 2, FH = GH + BORD * 2;
+  const gif = new GIF({ workers: 2, quality: 10, width: FW, height: FH, workerScript: workerUrl });
+  const imgs = await Promise.all(gifFrames.map(loadImg));
+  imgs.forEach(im => {
+    work.width = FW; work.height = FH;
+    wctx.filter = 'none';
+    wctx.fillStyle = D.bg; wctx.fillRect(0, 0, FW, FH);
+    wctx.drawImage(im, BORD, BORD, GW, GH);
+    gif.addFrame(wctx, { copy: true, delay: 120 });
+  });
+  gif.on('progress', p => { resultNote.textContent = `building gif... ${Math.round(p * 100)}%`; });
+  gif.on('finished', blob => {
+    shareOrDownload(blob, 'photobooth.gif', 'Photobooth clip');
+    saveGifBtn.disabled = false;
+    URL.revokeObjectURL(workerUrl);
+  });
+  gif.render();
+};
+
+buildLiveStrip();
+initCamera();
+</script>
+</body>
+</html>
